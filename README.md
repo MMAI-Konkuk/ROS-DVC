@@ -1,6 +1,6 @@
 # ROS-DVC
 
-Official implementation for Stay in your Lane: Role Specific Queries with Overlap Suppression Loss for Dense Video Captioning (CVPR 2026)
+Official implementation for **Stay in your Lane: Role Specific Queries with Overlap Suppression Loss for Dense Video Captioning** (**CVPR 2026**)
 
 [[paper]]()
 
