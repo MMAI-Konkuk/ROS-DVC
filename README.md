@@ -2,7 +2,7 @@
 
 Official implementation for **Stay in your Lane: Role Specific Queries with Overlap Suppression Loss for Dense Video Captioning** (**CVPR 2026**)
 
-[[paper]]()
+[[paper]](https://arxiv.org/pdf/2603.11439)
 
 ## Introduction
 ROS-DVC is a simple but effective end-to-end dense video captioning framework that  utilize role-specific queries that separate localization and captioning into independent components, allowing each to exclusively learn its role.
