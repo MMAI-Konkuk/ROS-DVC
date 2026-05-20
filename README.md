@@ -17,7 +17,6 @@ Environment: Linux,  GCC>=5.4, CUDA >= 9.2, Python>=3.7, PyTorch>=1.5.1
 conda create -n ROS python=3.7
 source activate ROS
 conda install pytorch==1.7.1 torchvision==0.8.2 cudatoolkit=10.1 -c pytorch
-conda install ffmpeg
 pip install -r requirement.txt
 ```
 
