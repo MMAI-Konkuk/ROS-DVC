@@ -31,18 +31,23 @@ sh make.sh
 you can get CLIP features of Youcook2 and ActivityNet captions from [here](https://github.com/ailab-kyunghee/CM2_DVC/tree/master?tab=readme-ov-file)
 
 ## Training and Validation
-
+ActivityNet Captions
 ```
 # Training
-config_path=cfgs/yc2.yml
-python train.py --cfg_path ${config_path} --gpu_id ${GPU_ID}
-# The script will evaluate the model for every epoch. The results and logs are saved in `./save`.
+sh  train_anet.sh
 
 # Evaluation
-eval_folder={eval_folder_path} # specify the folder to be evaluated
-python eval.py --eval_folder ${eval_folder} --eval_transformer_input_type queries --gpu_id ${GPU_ID}
+sh  eval_anet.sh
 ```
 
+YouCook2
+```
+# Training
+sh  train_yc2.sh
+
+# Evaluation
+sh  eval_yc2.sh
+```
 
 ## Acknowledgement
 
