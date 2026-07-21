@@ -2,7 +2,7 @@
 
 target_domain: 'yc2'
 visual_feature_type: ['clip']
-visual_feature_folder: ['data/yc2/features/clipvitl14.pth']
+visual_feature_folder: ['data/yc2/features/clipvitl14.pth', 'data/yc2/features/clipvitl14_patches.pth']
 feature_dim: 768
 invalid_video_json: []
 train_caption_file: 'data/yc2/captiondata/yc2_train.json'
@@ -37,9 +37,9 @@ learning_rate_decay_rate: 0.5
 weight_decay: 0.0001
 save_all_checkpoint: 0
 
-num_queries: 300
-dec_layers: 6
-enc_layers: 6
+#num_queries: 100
+dec_layers: 2
+enc_layers: 2
 transformer_ff_dim: 512
 transformer_dropout_prob: 0.1
 frame_embedding_num: 200
@@ -59,13 +59,13 @@ caption_loss_coef: 2
 giou_loss_coef: 4
 bbox_loss_coef: 0
 cls_loss_coef: 2
-count_loss_coef: 0.5
+count_loss_coef: 1 #0.5
 max_eseq_length: 20
 lloss_cross_entropy: 0
 lloss_focal_loss: 0
 lloss_gau_mask: 1
 
 contrastive_loss_start_coef: 1
-concept_loss_coef: 0.5
+concept_loss_coef: 0
 ctca_loss_coef: 0.5
 osl_coef: 0.5
