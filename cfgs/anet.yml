@@ -21,7 +21,7 @@ cap_num_feature_levels: 4
 soft_attention: 1
 att_hid_size: 512
 
-ec_alpha: 1.0
+ec_alpha: 1.1
 
 train_proposal_type: gt
 gt_proposal_sample_num: 30
@@ -35,9 +35,9 @@ learning_rate_decay_rate: 0.5
 weight_decay: 0.0001
 save_all_checkpoint: 0
 
-num_queries: 30
-dec_layers: 4
-enc_layers: 4
+num_queries: 10
+dec_layers: 2
+enc_layers: 2
 transformer_ff_dim: 512
 transformer_dropout_prob: 0.1
 frame_embedding_num: 100
@@ -71,3 +71,4 @@ osl_coef: 0.5
 osl_beta: 1.0
 
 seed: 777
+
