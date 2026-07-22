@@ -11,13 +11,27 @@ import random
 from torch.utils.data import Dataset, DataLoader
 import pandas as pd
 from scipy.interpolate import interp1d
-from transformers import GPT2Tokenizer
 
+import spacy
+
+nlp = spacy.load("en_core_web_sm", disable=["ner", "parser"])
+VALID_POS = {"NOUN", "VERB", "PROPN"}
+
+def extract_nv_tokens(text):
+    doc = nlp(text)
+    return [t.lemma_.lower() for t in doc if t.pos_ in VALID_POS]
+
+def make_caption_label(tokens, stoi, Nc):
+    y = np.zeros(Nc, dtype=np.float32)
+    for t in tokens:
+        if t in stoi:
+            y[stoi[t]] = 1.0
+    return y
 
 def collate_fn(batch):
     batch_size = len(batch)
     feature_size = batch[0][0].shape[1]
-    feature_list, gt_timestamps_list, labels, caption_list,caption_mask, gt_raw_timestamp, raw_duration, raw_caption, key = zip(
+    feature_list, gt_timestamps_list, labels, caption_list, gt_raw_timestamp, raw_duration, raw_caption, key, concept_labels = zip(
         *batch)
 
     max_video_length = max([x.shape[0] for x in feature_list])
@@ -35,7 +49,7 @@ def collate_fn(batch):
     caption_tensor = torch.LongTensor(total_caption_num, max_caption_length).zero_()
 
     caption_length = torch.LongTensor(total_caption_num).zero_()
-    # caption_mask = torch.BoolTensor(total_caption_num, max_caption_length).zero_()
+    caption_mask = torch.BoolTensor(total_caption_num, max_caption_length).zero_()
     caption_gather_idx = torch.LongTensor(total_caption_num).zero_()
     # proposal_gather_idx = torch.LongTensor(total_proposal_num).zero_()
 
@@ -91,11 +105,10 @@ def collate_fn(batch):
              gt_raw_timestamp[idx]]).float()
 
         for iidx, captioning in enumerate(caption_list[idx]):
-            # _caption_len = len(captioning)
-            _caption_len=sum(captioning!=50256).item()
+            _caption_len = len(captioning)
             caption_length[total_caption_idx + iidx] = _caption_len
-            caption_tensor[total_caption_idx + iidx] = captioning
-            # caption_mask[total_caption_idx + iidx, :_caption_len] = True
+            caption_tensor[total_caption_idx + iidx, :_caption_len] = torch.from_numpy(captioning)
+            caption_mask[total_caption_idx + iidx, :_caption_len] = True
         total_caption_idx += gt_proposal_length
 
     gt_boxes_mask = (gt_boxes_tensor != 0).sum(2) > 0
@@ -106,7 +119,7 @@ def collate_fn(batch):
                'labels': torch.tensor(labels[i]).long(),
                'masks': None,
                'image_id': vid} for i, vid in enumerate(list(key))]
-
+    concept_labels_all = torch.tensor(np.concatenate(concept_labels, axis=0)).float()
     dt = {
         "video":
             {
@@ -144,9 +157,13 @@ def collate_fn(batch):
             {
                 "tensor": caption_tensor,  # tensor,      (gt_all_event_num, cap_len)
                 "length": caption_length,  # tensor,      (gt_all_event_num)
-                "mask": caption_mask[0],  # tensor,      (gt_all_event_num, cap_len, 1)
+                "mask": caption_mask,  # tensor,      (gt_all_event_num, cap_len, 1)
                 "raw": list(raw_caption),  # list,        (video_num, ~gt_event_num, ~~caption_len)
-            }
+            },
+        "concept": 
+            {
+                "labels": concept_labels_all,   # (총 caption 수, Nc)
+            }       
     }
     dt = {k1 + '_' + k2: v2 for k1, v1 in dt.items() for k2, v2 in v1.items()}
     return dt
@@ -170,7 +187,6 @@ class Translator(object):
         sentence_split = sentence.replace('.', ' . ').replace(',', ' , ').lower().split()
         res = np.array(
             [0] + [self.vocab['word_to_ix'][word] for word in sentence_split][:max_len - 2] + [0])
-        print(res)
         return res
 
     def rtranslate(self, sent_ids):
@@ -191,9 +207,6 @@ class EDVCdataset(Dataset):
         super(EDVCdataset, self).__init__()
         self.anno = json.load(open(anno_file, 'r'))
         self.translator = Translator(translator_json, opt.vocab_size)
-        self.tokenizer = GPT2Tokenizer.from_pretrained('/home/user/plm_cache/gpt2')
-        self.tokenizer.pad_token = self.tokenizer.eos_token
-
         self.max_caption_len = opt.max_caption_len
         self.keys = list(self.anno.keys())
         for json_path in opt.invalid_video_json:
@@ -211,13 +224,11 @@ class EDVCdataset(Dataset):
         self.feature_dim = self.opt.feature_dim
         self.num_queries = opt.num_queries
         
-        # 如果是clip的特征 就加载
         if 'clip' in opt.visual_feature_type:
-            self.viz_feats=torch.load(feature_folder[0])
-            
+            self.viz_feats = torch.load(feature_folder[0])
+                        
     def __len__(self):
         return len(self.keys)
-        # return 3
 
     def process_time_step(self, duration, timestamps_list, feature_length):
         duration = np.array(duration)
@@ -235,11 +246,12 @@ class EDVCdataset(Dataset):
 class PropSeqDataset(EDVCdataset):
 
     def __init__(self, anno_file, feature_folder, translator_pickle, is_training, proposal_type,
-
-                 opt):
+                 opt, stoi=None, Nc=None):
         super(PropSeqDataset, self).__init__(anno_file,
                                              feature_folder, translator_pickle, is_training, proposal_type,
                                              opt)
+        self.stoi = stoi
+        self.Nc = Nc
 
     def load_feats(self, key):
         vf_types = self.opt.visual_feature_type
@@ -275,11 +287,14 @@ class PropSeqDataset(EDVCdataset):
                 out = resizeFeature(out, self.opt.frame_embedding_num, 'nearest')
         assert out.shape[1] == self.feature_dim, 'wrong value of feature_dim'
         return out
+    
+    def clipping_feature(self, prev_feats, vid_start, vid_end):
+        new_feats = prev_feats[vid_start:vid_end] # only works on clip feature which is 1fps
+
+        return new_feats
 
     def __getitem__(self, idx):
         key = str(self.keys[idx])
-
-        # 如果是clip的特征就不做处理
         if 'clip' in self.opt.visual_feature_type:
             try:
                 feats = self.viz_feats[key].numpy()
@@ -300,34 +315,27 @@ class PropSeqDataset(EDVCdataset):
 
         captions = [captions[_] for _ in range(len(captions)) if _ in random_ids]
         gt_timestamps = [gt_timestamps[_] for _ in range(len(gt_timestamps)) if _ in random_ids]
+
+        #feats = self.clipping_feature(feats, self.anno[key]['vid_start'], self.anno[key]['vid_end'])
+        #gt_timestamps = self.extend_timestamp(gt_timestamps, duration)
+
         action_labels = [action_labels[_] for _ in range(len(action_labels)) if _ in random_ids]
 
-
-
-        # caption_label = [np.array(self.translator.translate(sent, self.max_caption_len)) for sent in captions]
-        # tokenizer.encode(sent,)
-        bos_caption=["<|endoftext|> "+ cap.split(".")[0].lower() +"." for cap in captions]
-        caption_input = self.tokenizer(
-            bos_caption,
-            return_tensors="pt",
-            padding="max_length",
-            truncation=True,
-            max_length=self.max_caption_len,
-        )
-        caption_label=caption_input["input_ids"]
-        caption_mask=caption_input["attention_mask"]
-
-
-
+        caption_label = [np.array(self.translator.translate(sent, self.max_caption_len)) for sent in captions]
         gt_featstamps = self.process_time_step(duration, gt_timestamps, feats.shape[0])
+        
+        concept_labels = []
 
-        # lnt_timestamps = gt_timestamps
-        # lnt_featstamps = gt_featstamps
-        # gt_idx = np.arange(len(gt_timestamps))
-        # event_seq_idx = seq_gt_idx = np.expand_dims(gt_idx, 0)
-        # lnt_scores = [1.] * len(lnt_featstamps)
+        if self.stoi is not None and self.Nc is not None:
+            for sent in captions:
+                tokens = extract_nv_tokens(sent)
+                concept_label = make_caption_label(tokens, self.stoi, self.Nc)
+                concept_labels.append(concept_label)    # (Nc,)
+            concept_labels = np.stack(concept_labels)
+        else:
+            concept_labels = np.zeros((len(captions), 1))
 
-        return feats, gt_featstamps, action_labels, caption_label,caption_mask, gt_timestamps, duration, captions, key
+        return feats, gt_featstamps, action_labels, caption_label, gt_timestamps, duration, captions, key, concept_labels
 
 
 def iou(interval_1, interval_2):
